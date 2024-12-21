@@ -2410,11 +2410,13 @@ def trim_and_resize_if_required(
     assert image.shape[0] == reso[1] and image.shape[1] == reso[0], f"internal error, illegal trimmed size: {image.shape}, {reso}"
     return image, original_size, crop_ltrb
 
-def process_image(info, use_alpha_mask, random_crop):
+def process_image(tuple_args):
     """
     Process a single image info entry: load, resize, crop, and prepare alpha mask.
     Returns the processed image data and metadata.
     """
+    info, use_alpha_mask, random_crop = tuple_args
+
     try:
         # Load image
         image = (

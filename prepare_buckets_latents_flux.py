@@ -79,6 +79,9 @@ def convert_to_pil(data_entry):
     """
     Convert a tensor to a PIL image and return the processed data entry.
     """
+    if not data_entry:  # Handle empty batches
+        print("Empty batch received, skipping...")
+        return None
     if data_entry[0] is None:
         return None
 
