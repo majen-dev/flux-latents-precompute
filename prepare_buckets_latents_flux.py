@@ -1,12 +1,14 @@
 import argparse
 import json
 import os
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import List
 
 import numpy as np
 import torch
 from PIL import Image
+from torchvision.transforms.functional import to_pil_image
 from tqdm import tqdm
 
 from library.device_utils import get_preferred_device, init_ipex
@@ -124,71 +126,69 @@ def main(args):
                 bucket.clear()
 
     # 読み込みの高速化のためにDataLoaderを使うオプション
-    if args.max_data_loader_n_workers is not None:
-        dataset = train_util.ImageLoadingDataset(image_paths)
-        data = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=1,
-            shuffle=False,
-            num_workers=args.max_data_loader_n_workers,
-            collate_fn=collate_fn_remove_corrupted,
-            drop_last=False,
-        )
-    else:
-        data = [[(None, ip)] for ip in image_paths]
+    dataset = train_util.ImageLoadingDataset(image_paths)
+    data = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=args.max_data_loader_n_workers,
+        collate_fn=collate_fn_remove_corrupted,
+        drop_last=False,
+    )
 
-    bucket_counts = {}
-    for data_entry in tqdm(data, smoothing=0.0):
+    def convert_to_pil(data_entry):
+        """
+        Convert a tensor to a PIL image and return the processed data entry.
+        """
         if data_entry[0] is None:
-            continue
+            return None
 
         img_tensor, image_path = data_entry[0]
-        if img_tensor is not None:
-            image = transforms.functional.to_pil_image(img_tensor)
-        else:
-            try:
-                image = Image.open(image_path)
-                if image.mode != "RGB":
-                    image = image.convert("RGB")
-            except Exception as e:
-                logger.error(f"Could not load image path / 画像を読み込めません: {image_path}, error: {e}")
-                continue
+        try:
+            image = to_pil_image(img_tensor)
+            return (image, image_path)  # Return the converted image and its path
+        except Exception as e:
+            logger.error(f"Error converting tensor to PIL image for {image_path}: {e}")
+            return None
 
+    # Parallel conversion using ProcessPoolExecutor
+    with ProcessPoolExecutor() as executor:
+        converted_images = list(executor.map(convert_to_pil, data))
+
+    bucket_counts = {}
+
+    for result in converted_images:
+        if result is None:
+            continue
+
+        image, image_path = result
         image_key = image_path if args.full_path else os.path.splitext(os.path.basename(image_path))[0]
-        if image_key not in metadata:
-            metadata[image_key] = {}
+        metadata[image_key] = {}
 
-        # 本当はこのあとの部分もDataSetに持っていけば高速化できるがいろいろ大変
-
+        # Bucket assignment and processing
         reso, resized_size, ar_error = bucket_manager.select_bucket(image.width, image.height)
         img_ar_errors.append(abs(ar_error))
         bucket_counts[reso] = bucket_counts.get(reso, 0) + 1
 
-        # メタデータに記録する解像度はlatent単位とするので、8単位で切り捨て
         metadata[image_key]["train_resolution"] = (reso[0] - reso[0] % 8, reso[1] - reso[1] % 8)
 
         if not args.bucket_no_upscale:
-            # upscaleを行わないときには、resize後のサイズは、bucketのサイズと、縦横どちらかが同じであることを確認する
             assert (
-                resized_size[0] == reso[0] or resized_size[1] == reso[1]
-            ), f"internal error, resized size not match: {reso}, {resized_size}, {image.width}, {image.height}"
+                    resized_size[0] == reso[0] or resized_size[1] == reso[1]
+            ), f"Internal error, resized size not match: {reso}, {resized_size}, {image.width}, {image.height}"
             assert (
-                resized_size[0] >= reso[0] and resized_size[1] >= reso[1]
-            ), f"internal error, resized size too small: {reso}, {resized_size}, {image.width}, {image.height}"
+                    resized_size[0] >= reso[0] and resized_size[1] >= reso[1]
+            ), f"Internal error, resized size too small: {reso}, {resized_size}, {image.width}, {image.height}"
 
         assert (
-            resized_size[0] >= reso[0] and resized_size[1] >= reso[1]
-        ), f"internal error resized size is small: {resized_size}, {reso}"
+                resized_size[0] >= reso[0] and resized_size[1] >= reso[1]
+        ), f"Internal error, resized size is small: {resized_size}, {reso}"
 
         # Get original image dimensions for the filename
         original_size = (image.width, image.height)
         npz_file_name = get_npz_filename(args.train_data_dir, image_key, args.full_path, args.recursive, original_size)
 
-        if args.skip_existing:
-            if train_util.is_disk_cached_latents_is_expected(reso, npz_file_name, args.flip_aug):
-                continue
-
-        # バッチへ追加
+        # Add to batch
         image_info = train_util.ImageInfo(image_key, 1, False, image_path)
         image_info.latents_cache_path = npz_file_name
         image_info.bucket_reso = reso
@@ -196,7 +196,7 @@ def main(args):
         image_info.image = image
         bucket_manager.add_image(reso, image_info)
 
-        # バッチを推論するか判定して推論する
+        # Decide whether to process the batch
         process_batch(False)
 
     # 残りを処理する
@@ -282,11 +282,6 @@ def setup_parser() -> argparse.ArgumentParser:
         type=str,
         default="",
         help="save alpha mask for images for loss calculation / 損失計算用に画像のアルファマスクを保存する",
-    )
-    parser.add_argument(
-        "--skip_existing",
-        action="store_true",
-        help="skip images if npz already exists (both normal and flipped exists if flip_aug is enabled) / npzが既に存在する画像をスキップする（flip_aug有効時は通常、反転の両方が存在する画像をスキップ）",
     )
     parser.add_argument(
         "--recursive",

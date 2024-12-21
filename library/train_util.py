@@ -3,7 +3,7 @@
 import argparse
 import ast
 import asyncio
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, ProcessPoolExecutor
 import datetime
 import importlib
 import json
@@ -2429,28 +2429,60 @@ def load_images_and_masks_for_caching(
     alpha_masks: List[torch.Tensor] = []
     original_sizes: List[Tuple[int, int]] = []
     crop_ltrbs: List[Tuple[int, int, int, int]] = []
-    for info in image_infos:
-        image = load_image(info.absolute_path, use_alpha_mask) if info.image is None else np.array(info.image, np.uint8)
-        # TODO 画像のメタデータが壊れていて、メタデータから割り当てたbucketと実際の画像サイズが一致しない場合があるのでチェック追加要
-        image, original_size, crop_ltrb = trim_and_resize_if_required(random_crop, image, info.bucket_reso, info.resized_size)
 
-        original_sizes.append(original_size)
-        crop_ltrbs.append(crop_ltrb)
+    def process_image(info):
+        """
+        Process a single image info entry: load, resize, crop, and prepare alpha mask.
+        Returns the processed image data and metadata.
+        """
+        try:
+            # Load image
+            image = (
+                load_image(info.absolute_path, use_alpha_mask)
+                if info.image is None
+                else np.array(info.image, np.uint8)
+            )
 
-        if use_alpha_mask:
-            if image.shape[2] == 4:
-                alpha_mask = image[:, :, 3]  # [H,W]
-                alpha_mask = alpha_mask.astype(np.float32) / 255.0
-                alpha_mask = torch.FloatTensor(alpha_mask)  # [H,W]
+            # Resize and crop
+            image, original_size, crop_ltrb = trim_and_resize_if_required(
+                random_crop, image, info.bucket_reso, info.resized_size
+            )
+
+            # Create alpha mask if required
+            if use_alpha_mask:
+                if image.shape[2] == 4:
+                    alpha_mask = image[:, :, 3].astype(np.float32) / 255.0
+                    alpha_mask = torch.FloatTensor(alpha_mask)  # [H,W]
+                else:
+                    alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
             else:
-                alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
-        else:
-            alpha_mask = None
-        alpha_masks.append(alpha_mask)
+                alpha_mask = None
 
-        image = image[:, :, :3]  # remove alpha channel if exists
-        image = IMAGE_TRANSFORMS(image)
-        images.append(image)
+            # Process the image (remove alpha channel, apply transforms)
+            image = image[:, :, :3]  # Remove alpha channel if exists
+            image = IMAGE_TRANSFORMS(image)
+
+            return {
+                "image": image,
+                "original_size": original_size,
+                "crop_ltrb": crop_ltrb,
+                "alpha_mask": alpha_mask,
+            }
+        except Exception as e:
+            logger.error(f"Error processing image {info.absolute_path}: {e}")
+            return None
+
+    # Use multiprocessing to process all images
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(process_image, image_infos))
+
+    # Unpack results
+    for result in results:
+        if result is not None:
+            images.append(result["image"])
+            original_sizes.append(result["original_size"])
+            crop_ltrbs.append(result["crop_ltrb"])
+            alpha_masks.append(result["alpha_mask"])
 
     img_tensor = torch.stack(images, dim=0)
     return img_tensor, alpha_masks, original_sizes, crop_ltrbs

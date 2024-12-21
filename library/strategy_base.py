@@ -2,6 +2,7 @@
 
 import os
 import re
+from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -827,7 +828,7 @@ class LatentsCachingStrategy:
             flipped_latents = [None] * len(latents_tensors)
 
         # for info, latents, flipped_latent, alpha_mask in zip(image_infos, latents_tensors, flipped_latents, alpha_masks):
-        for i in range(len(image_infos)):
+        def process_item(i):
             info = image_infos[i]
             latents = latents_tensors[i]
             flipped_latent = flipped_latents[i]
@@ -846,6 +847,10 @@ class LatentsCachingStrategy:
                 if flip_aug:
                     info.latents_flipped = flipped_latent
                 info.alpha_mask = alpha_mask
+
+        # Use a thread pool to process items in parallel
+        with ProcessPoolExecutor() as executor:
+            executor.map(process_item, range(len(image_infos)))
 
     def load_latents_from_disk(
         self, cache_path: str, bucket_reso: Tuple[int, int]
