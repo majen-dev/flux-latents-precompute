@@ -2,7 +2,7 @@
 
 import os
 import re
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -849,7 +849,7 @@ class LatentsCachingStrategy:
                 info.alpha_mask = alpha_mask
 
         # Use a thread pool to process items in parallel
-        with ProcessPoolExecutor() as executor:
+        with ThreadPoolExecutor() as executor:
             executor.map(process_item, range(len(image_infos)))
 
     def load_latents_from_disk(

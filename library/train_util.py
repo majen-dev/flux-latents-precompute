@@ -2410,6 +2410,47 @@ def trim_and_resize_if_required(
     assert image.shape[0] == reso[1] and image.shape[1] == reso[0], f"internal error, illegal trimmed size: {image.shape}, {reso}"
     return image, original_size, crop_ltrb
 
+def process_image(info, use_alpha_mask, random_crop):
+    """
+    Process a single image info entry: load, resize, crop, and prepare alpha mask.
+    Returns the processed image data and metadata.
+    """
+    try:
+        # Load image
+        image = (
+            load_image(info.absolute_path, use_alpha_mask)
+            if info.image is None
+            else np.array(info.image, np.uint8)
+        )
+
+        # Resize and crop
+        image, original_size, crop_ltrb = trim_and_resize_if_required(
+            random_crop, image, info.bucket_reso, info.resized_size
+        )
+
+        # Create alpha mask if required
+        if use_alpha_mask:
+            if image.shape[2] == 4:
+                alpha_mask = image[:, :, 3].astype(np.float32) / 255.0
+                alpha_mask = torch.FloatTensor(alpha_mask)  # [H,W]
+            else:
+                alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
+        else:
+            alpha_mask = None
+
+        # Process the image (remove alpha channel, apply transforms)
+        image = image[:, :, :3]  # Remove alpha channel if exists
+        image = IMAGE_TRANSFORMS(image)
+
+        return {
+            "image": image,
+            "original_size": original_size,
+            "crop_ltrb": crop_ltrb,
+            "alpha_mask": alpha_mask,
+        }
+    except Exception as e:
+        logger.error(f"Error processing image {info.absolute_path}: {e}")
+        return None
 
 # for new_cache_latents
 def load_images_and_masks_for_caching(
@@ -2430,51 +2471,10 @@ def load_images_and_masks_for_caching(
     original_sizes: List[Tuple[int, int]] = []
     crop_ltrbs: List[Tuple[int, int, int, int]] = []
 
-    def process_image(info):
-        """
-        Process a single image info entry: load, resize, crop, and prepare alpha mask.
-        Returns the processed image data and metadata.
-        """
-        try:
-            # Load image
-            image = (
-                load_image(info.absolute_path, use_alpha_mask)
-                if info.image is None
-                else np.array(info.image, np.uint8)
-            )
-
-            # Resize and crop
-            image, original_size, crop_ltrb = trim_and_resize_if_required(
-                random_crop, image, info.bucket_reso, info.resized_size
-            )
-
-            # Create alpha mask if required
-            if use_alpha_mask:
-                if image.shape[2] == 4:
-                    alpha_mask = image[:, :, 3].astype(np.float32) / 255.0
-                    alpha_mask = torch.FloatTensor(alpha_mask)  # [H,W]
-                else:
-                    alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
-            else:
-                alpha_mask = None
-
-            # Process the image (remove alpha channel, apply transforms)
-            image = image[:, :, :3]  # Remove alpha channel if exists
-            image = IMAGE_TRANSFORMS(image)
-
-            return {
-                "image": image,
-                "original_size": original_size,
-                "crop_ltrb": crop_ltrb,
-                "alpha_mask": alpha_mask,
-            }
-        except Exception as e:
-            logger.error(f"Error processing image {info.absolute_path}: {e}")
-            return None
-
     # Use multiprocessing to process all images
     with ProcessPoolExecutor() as executor:
-        results = list(executor.map(process_image, image_infos))
+        results = list(executor.map(process_image, zip(image_infos, [use_alpha_mask] * len(image_infos), [random_crop] * len(image_infos))))
+
 
     # Unpack results
     for result in results:

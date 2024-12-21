@@ -64,6 +64,31 @@ def get_npz_filename(data_dir, image_key, is_full_path, recursive, resolution=No
     else:
         return os.path.join(data_dir, base_name) + ".safetensors"
 
+def pil_ensure_rgb(image: Image.Image) -> Image.Image:
+    # convert to RGB/RGBA if not already (deals with palette images etc.)
+    if image.mode not in ["RGB", "RGBA"]:
+        image = image.convert("RGBA") if "transparency" in image.info else image.convert("RGB")
+    # convert RGBA to RGB with white background
+    if image.mode == "RGBA":
+        canvas = Image.new("RGBA", image.size, (255, 255, 255))
+        canvas.alpha_composite(image)
+        image = canvas.convert("RGB")
+    return image
+
+def convert_to_pil(data_entry):
+    """
+    Convert a tensor to a PIL image and return the processed data entry.
+    """
+    if data_entry[0] is None:
+        return None
+
+    img_tensor, image_path = data_entry[0]
+    try:
+        image = pil_ensure_rgb(to_pil_image(img_tensor))
+        return (image, image_path)  # Return the converted image and its path
+    except Exception as e:
+        logger.error(f"Error converting tensor to PIL image for {image_path}: {e}")
+        return None
 
 def main(args):
     flux_strategy = FluxLatentsCachingStrategy(
@@ -135,21 +160,6 @@ def main(args):
         collate_fn=collate_fn_remove_corrupted,
         drop_last=False,
     )
-
-    def convert_to_pil(data_entry):
-        """
-        Convert a tensor to a PIL image and return the processed data entry.
-        """
-        if data_entry[0] is None:
-            return None
-
-        img_tensor, image_path = data_entry[0]
-        try:
-            image = pil_ensure_rgb(to_pil_image(img_tensor))
-            return (image, image_path)  # Return the converted image and its path
-        except Exception as e:
-            logger.error(f"Error converting tensor to PIL image for {image_path}: {e}")
-            return None
 
     # Parallel conversion using ProcessPoolExecutor
     with ProcessPoolExecutor() as executor:
