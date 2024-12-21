@@ -2416,20 +2416,16 @@ def process_image(tuple_args):
     Returns the processed image data and metadata.
     """
     info, use_alpha_mask, random_crop = tuple_args
-
+    print("start" + str(os.path.basename(info.absolute_path)))
     try:
         # Load image
-        image = (
-            load_image(info.absolute_path, use_alpha_mask)
-            if info.image is None
-            else np.array(info.image, np.uint8)
-        )
+        image = info.image
 
         # Resize and crop
         image, original_size, crop_ltrb = trim_and_resize_if_required(
             random_crop, image, info.bucket_reso, info.resized_size
         )
-
+        print("start1" + str(os.path.basename(info.absolute_path)))
         # Create alpha mask if required
         if use_alpha_mask:
             if image.shape[2] == 4:
@@ -2439,11 +2435,12 @@ def process_image(tuple_args):
                 alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
         else:
             alpha_mask = None
-
+        print("start2" + str(os.path.basename(info.absolute_path)))
         # Process the image (remove alpha channel, apply transforms)
         image = image[:, :, :3]  # Remove alpha channel if exists
         image = IMAGE_TRANSFORMS(image)
 
+        print("end" + str(os.path.basename(info.absolute_path)))
         return {
             "image": image,
             "original_size": original_size,
@@ -2453,6 +2450,7 @@ def process_image(tuple_args):
     except Exception as e:
         logger.error(f"Error processing image {info.absolute_path}: {e}")
         return None
+
 
 # for new_cache_latents
 def load_images_and_masks_for_caching(

@@ -847,6 +847,7 @@ class LatentsCachingStrategy:
                 if flip_aug:
                     info.latents_flipped = flipped_latent
                 info.alpha_mask = alpha_mask
+            return
 
         # Use a thread pool to process items in parallel
         with ThreadPoolExecutor() as executor:
