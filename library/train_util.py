@@ -2420,6 +2420,7 @@ def process_image(tuple_args):
     try:
         # Load image
         image = info.image
+        image = np.array(image)  # Convert Pillow image to NumPy array
 
         # Resize and crop
         image, original_size, crop_ltrb = trim_and_resize_if_required(
