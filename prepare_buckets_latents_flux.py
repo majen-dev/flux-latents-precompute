@@ -145,7 +145,7 @@ def main(args):
 
         img_tensor, image_path = data_entry[0]
         try:
-            image = to_pil_image(img_tensor)
+            image = pil_ensure_rgb(to_pil_image(img_tensor))
             return (image, image_path)  # Return the converted image and its path
         except Exception as e:
             logger.error(f"Error converting tensor to PIL image for {image_path}: {e}")
