@@ -2418,6 +2418,12 @@ def process_image(tuple_args):
     info, use_alpha_mask, random_crop = tuple_args
     print("start" + str(os.path.basename(info.absolute_path)))
     try:
+        IMAGE_TRANSFORMS_LOC = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize([0.5], [0.5]),
+            ]
+        )
         # Load image
         image = info.image
         image = np.array(image)  # Convert Pillow image to NumPy array
@@ -2439,7 +2445,7 @@ def process_image(tuple_args):
         print("start2" + str(os.path.basename(info.absolute_path)))
         # Process the image (remove alpha channel, apply transforms)
         image = image[:, :, :3]  # Remove alpha channel if exists
-        image = IMAGE_TRANSFORMS(image)
+        image = IMAGE_TRANSFORMS_LOC(image)
 
         print("end" + str(os.path.basename(info.absolute_path)))
         return {
