@@ -2445,12 +2445,15 @@ def trim_and_resize_if_required(
             image = resize(image, size=[resized_size[1], resized_size[0]], interpolation=InterpolationMode.BICUBIC, antialias=True)  # Use torchvision's resize with antialiasing
 
         channels, image_height, image_width = image.shape
+        print(image.shape)
 
         # Trim the width to match the target resolution
         if image_width > reso[0]:
             trim_size = image_width - reso[0]
             p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
             image = image[:, :, p: p + reso[0]]
+
+        print(image.shape)
 
         # Trim the height to match the target resolution
         if image_height > reso[1]:
@@ -2460,6 +2463,7 @@ def trim_and_resize_if_required(
 
         # Calculate crop left, top, right, bottom
         crop_ltrb = (0, 0, image_width, image_height)  # Adjust based on your logic for ltrb
+        print(image.shape)
 
         event.record()
 
@@ -2497,23 +2501,12 @@ def process_image(tuple_args):
             random_crop, image, info.bucket_reso, info.resized_size
         )
 
-        # Create alpha mask if required
-        #if use_alpha_mask:
-        #    if image.shape[2] == 4:
-        #        alpha_mask = image[:, :, 3].astype(np.float32) / 255.0
-        #        alpha_mask = torch.FloatTensor(alpha_mask)  # [H,W]
-        #    else:
-        #        alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
-        #else:
         alpha_mask = None
-
-        # Process the image (remove alpha channel, apply transforms)
-        image = image[:, :, :3]  # Remove alpha channel if exists
 
         normalize = transforms.Normalize([0.5], [0.5])
         image = normalize(image)
         image = image.to("cpu")
-
+        print(image.shape)
         return {
             "image": image,
             "original_size": original_size,
@@ -2545,7 +2538,7 @@ def load_images_and_masks_for_caching(
     crop_ltrbs: List[Tuple[int, int, int, int]] = []
 
     # Use multiprocessing to process all images
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         results = list(executor.map(process_image, zip(image_infos, [use_alpha_mask] * len(image_infos), [random_crop] * len(image_infos))))
 
     for info in image_infos:
