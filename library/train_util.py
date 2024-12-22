@@ -2437,25 +2437,27 @@ def trim_and_resize_if_required(
     # Start GPU operations in the custom stream
     with torch.cuda.stream(stream):
 
-        image_height, image_width = image.shape[:2]
+        channels, image_height, image_width = image.shape
         original_size = (image_width, image_height)  # size before resize
 
         # Resize the image if needed
         if image_width != resized_size[0] or image_height != resized_size[1]:
             image = resize(image, size=list(resized_size), interpolation=InterpolationMode.BICUBIC, antialias=True)  # Use torchvision's resize with antialiasing
 
-        image_height, image_width = image.shape[:2]
+        channels, image_height, image_width = image.shape
 
         # Trim the image to the target resolution (width x height)
+        # Trim the width to target resolution
         if image_width > reso[0]:
             trim_size = image_width - reso[0]
             p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
-            image = image[:, p : p + reso[0]]
+            image = image[:, :, p: p + reso[0]]
 
+        # Trim the height to target resolution
         if image_height > reso[1]:
             trim_size = image_height - reso[1]
             p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
-            image = image[p : p + reso[1], :]
+            image = image[:, p: p + reso[1], :]
 
         # Calculate crop left, top, right, bottom
         crop_ltrb = (0, 0, image_width, image_height)  # Adjust based on your logic for ltrb
@@ -2465,8 +2467,8 @@ def trim_and_resize_if_required(
     event.synchronize()
 
     # Ensure the final dimensions match the target resolution
-    assert image.shape[0] == reso[1] and image.shape[1] == reso[0], (
-        f"Internal error, illegal trimmed size: {image.shape}, expected: {reso}"
+    assert image.shape[1:] == (reso[1], reso[0]), (
+        f"Internal error, illegal trimmed size: {image.shape[1:]}, expected: {(reso[1], reso[0])}, got {image.shape}"
     )
 
     return image, original_size, crop_ltrb
@@ -2482,6 +2484,8 @@ def process_image(tuple_args):
         # Load image
         image = info.image
         image = torch.from_numpy(image).to("cuda", non_blocking=True).to(torch.float32) / 255.0
+        assert image.ndim == 3 and image.shape[2] == 3, f"Unexpected image shape: {image.shape}"
+        image = image.permute(2, 0, 1)
         #image = image.to("cuda", non_blocking=True).to(torch.float32)
         #image = np.array(image)  # Convert Pillow image to NumPy array
         #info.image.close()
