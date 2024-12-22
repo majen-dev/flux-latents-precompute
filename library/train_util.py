@@ -23,6 +23,8 @@ import hashlib
 import subprocess
 from io import BytesIO
 import toml
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms.v2.functional import resize
 
 # from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -2377,38 +2379,96 @@ def load_image(image_path, alpha=False):
 
 
 # 画像を読み込む。戻り値はnumpy.ndarray,(original width, original height),(crop left, crop top, crop right, crop bottom)
+#def trim_and_resize_if_required(
+#    random_crop: bool, image: np.ndarray, reso, resized_size: Tuple[int, int]
+#) -> Tuple[np.ndarray, Tuple[int, int], Tuple[int, int, int, int]]:
+#    image_height, image_width = image.shape[0:2]
+#    original_size = (image_width, image_height)  # size before resize
+#
+#    if image_width != resized_size[0] or image_height != resized_size[1]:
+#        # リサイズする
+#        if image_width > resized_size[0] and image_height > resized_size[1]:
+#            image = cv2.resize(image, resized_size, interpolation=cv2.INTER_AREA)  # INTER_AREAでやりたいのでcv2でリサイズ
+#        else:
+#            image = pil_resize(image, resized_size)
+#
+#    image_height, image_width = image.shape[0:2]
+#
+#    if image_width > reso[0]:
+#        trim_size = image_width - reso[0]
+#        p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
+#        # logger.info(f"w {trim_size} {p}")
+#        image = image[:, p : p + reso[0]]
+#    if image_height > reso[1]:
+#        trim_size = image_height - reso[1]
+#        p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
+#        # logger.info(f"h {trim_size} {p})
+#        image = image[p : p + reso[1]]
+#
+#    # random cropの場合のcropされた値をどうcrop left/topに反映するべきか全くアイデアがない
+#    # I have no idea how to reflect the cropped value in crop left/top in the case of random crop
+#
+#    crop_ltrb = BucketManager.get_crop_ltrb(reso, original_size)
+#
+#    assert image.shape[0] == reso[1] and image.shape[1] == reso[0], f"internal error, illegal trimmed size: {image.shape}, {reso}"
+#    return image, original_size, crop_ltrb
+
 def trim_and_resize_if_required(
-    random_crop: bool, image: np.ndarray, reso, resized_size: Tuple[int, int]
-) -> Tuple[np.ndarray, Tuple[int, int], Tuple[int, int, int, int]]:
-    image_height, image_width = image.shape[0:2]
-    original_size = (image_width, image_height)  # size before resize
+    random_crop: bool, image: torch.Tensor, reso: Tuple[int, int], resized_size: Tuple[int, int]
+) -> Tuple[torch.Tensor, Tuple[int, int], Tuple[int, int, int, int]]:
+    """
+    Trim and resize an image tensor to the specified resolution.
 
-    if image_width != resized_size[0] or image_height != resized_size[1]:
-        # リサイズする
-        if image_width > resized_size[0] and image_height > resized_size[1]:
-            image = cv2.resize(image, resized_size, interpolation=cv2.INTER_AREA)  # INTER_AREAでやりたいのでcv2でリサイズ
-        else:
-            image = pil_resize(image, resized_size)
+    Args:
+        random_crop (bool): Whether to use random cropping.
+        image (torch.Tensor): Input image as a tensor with shape (H, W, C).
+        reso (Tuple[int, int]): Target resolution (width, height).
+        resized_size (Tuple[int, int]): Size to resize the image to before trimming (width, height).
 
-    image_height, image_width = image.shape[0:2]
+    Returns:
+        Tuple[torch.Tensor, Tuple[int, int], Tuple[int, int, int, int]]:
+            - Processed image as a tensor.
+            - Original size of the image before resizing.
+            - Cropping box as (left, top, right, bottom).
+    """
+    stream = torch.cuda.Stream()
+    event = torch.cuda.Event()
 
-    if image_width > reso[0]:
-        trim_size = image_width - reso[0]
-        p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
-        # logger.info(f"w {trim_size} {p}")
-        image = image[:, p : p + reso[0]]
-    if image_height > reso[1]:
-        trim_size = image_height - reso[1]
-        p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
-        # logger.info(f"h {trim_size} {p})
-        image = image[p : p + reso[1]]
+    # Start GPU operations in the custom stream
+    with torch.cuda.stream(stream):
 
-    # random cropの場合のcropされた値をどうcrop left/topに反映するべきか全くアイデアがない
-    # I have no idea how to reflect the cropped value in crop left/top in the case of random crop
+        image_height, image_width = image.shape[:2]
+        original_size = (image_width, image_height)  # size before resize
 
-    crop_ltrb = BucketManager.get_crop_ltrb(reso, original_size)
+        # Resize the image if needed
+        if image_width != resized_size[0] or image_height != resized_size[1]:
+            image = resize(image, size=list(resized_size), interpolation=InterpolationMode.BICUBIC, antialias=True)  # Use torchvision's resize with antialiasing
 
-    assert image.shape[0] == reso[1] and image.shape[1] == reso[0], f"internal error, illegal trimmed size: {image.shape}, {reso}"
+        image_height, image_width = image.shape[:2]
+
+        # Trim the image to the target resolution (width x height)
+        if image_width > reso[0]:
+            trim_size = image_width - reso[0]
+            p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
+            image = image[:, p : p + reso[0]]
+
+        if image_height > reso[1]:
+            trim_size = image_height - reso[1]
+            p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
+            image = image[p : p + reso[1], :]
+
+        # Calculate crop left, top, right, bottom
+        crop_ltrb = (0, 0, image_width, image_height)  # Adjust based on your logic for ltrb
+
+        event.record()
+
+    event.synchronize()
+
+    # Ensure the final dimensions match the target resolution
+    assert image.shape[0] == reso[1] and image.shape[1] == reso[0], (
+        f"Internal error, illegal trimmed size: {image.shape}, expected: {reso}"
+    )
+
     return image, original_size, crop_ltrb
 
 def process_image(tuple_args):
@@ -2420,10 +2480,12 @@ def process_image(tuple_args):
     # Limit PyTorch threads within this process
     torch.set_num_threads(1)  # Adjust the number of threads as needed
     torch.set_num_interop_threads(1)  # For inter-op threading
-    print("start" + str(os.path.basename(info.absolute_path)))
+
     try:
         # Load image
         image = info.image
+        image = torch.from_numpy(image).to("cuda", non_blocking=True).to(torch.float32) / 255.0
+        #image = image.to("cuda", non_blocking=True).to(torch.float32)
         #image = np.array(image)  # Convert Pillow image to NumPy array
         #info.image.close()
         #del info.image
@@ -2433,26 +2495,24 @@ def process_image(tuple_args):
         image, original_size, crop_ltrb = trim_and_resize_if_required(
             random_crop, image, info.bucket_reso, info.resized_size
         )
-        print("start1" + str(os.path.basename(info.absolute_path)))
+
         # Create alpha mask if required
-        if use_alpha_mask:
-            if image.shape[2] == 4:
-                alpha_mask = image[:, :, 3].astype(np.float32) / 255.0
-                alpha_mask = torch.FloatTensor(alpha_mask)  # [H,W]
-            else:
-                alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
-        else:
-            alpha_mask = None
-        print("start2" + str(os.path.basename(info.absolute_path)))
+        #if use_alpha_mask:
+        #    if image.shape[2] == 4:
+        #        alpha_mask = image[:, :, 3].astype(np.float32) / 255.0
+        #        alpha_mask = torch.FloatTensor(alpha_mask)  # [H,W]
+        #    else:
+        #        alpha_mask = torch.ones_like(image[:, :, 0], dtype=torch.float32)  # [H,W]
+        #else:
+        alpha_mask = None
+
         # Process the image (remove alpha channel, apply transforms)
         image = image[:, :, :3]  # Remove alpha channel if exists
 
-        image = torch.from_numpy(image)
-
         normalize = transforms.Normalize([0.5], [0.5])
         image = normalize(image)
+        image = image.to("cpu")
 
-        print("end" + str(os.path.basename(info.absolute_path)))
         return {
             "image": image,
             "original_size": original_size,
