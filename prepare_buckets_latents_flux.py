@@ -65,25 +65,20 @@ def get_npz_filename(data_dir, image_key, is_full_path, recursive, resolution=No
     else:
         return os.path.join(data_dir, base_name) + ".safetensors"
 
-def pil_ensure_rgb(image: Image.Image) -> Image.Image:
-    """
-    Ensure the image is in RGB mode, handling transparency if needed.
-    """
-    if image.mode not in ["RGB", "RGBA"]:
-        image = image.convert("RGBA") if "transparency" in image.info else image.convert("RGB")
-    if image.mode == "RGBA":
-        canvas = Image.new("RGBA", image.size, (255, 255, 255))
-        canvas.alpha_composite(image)
-        image = canvas.convert("RGB")
-    return image
-
 def load_and_convert_to_pil(image_path):
     """
     Load an image from disk, convert it to PIL, ensure RGB format, and return the image and path.
     """
     try:
         image = Image.open(image_path)
-        image = pil_ensure_rgb(image)
+
+        if image.mode not in ["RGB", "RGBA"]:
+            image = image.convert("RGBA") if "transparency" in image.info else image.convert("RGB")
+        if image.mode == "RGBA":
+            canvas = Image.new("RGBA", image.size, (255, 255, 255))
+            canvas.alpha_composite(image)
+            image = canvas.convert("RGB")
+
         return (image, image_path)
     except Exception as e:
         logger.error(f"Error loading or converting image {image_path}: {e}")
@@ -191,7 +186,11 @@ def main(args):
         image_info.latents_cache_path = npz_file_name
         image_info.bucket_reso = reso
         image_info.resized_size = resized_size
-        image_info.image = np.array(image)
+        try:
+            image_info.image = np.array(image)
+        except Exception as e:
+            logger.error(f"Error converting image to np {image_path}: {e}")
+            continue
         bucket_manager.add_image(reso, image_info)
 
         image.close()
