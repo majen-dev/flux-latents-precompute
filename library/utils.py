@@ -5,6 +5,7 @@ from typing import *
 import json
 import struct
 
+import numpy
 import torch
 import torch.nn as nn
 from torchvision import transforms
@@ -42,7 +43,7 @@ class ImageInfo:
         # crop left top right bottom in original pixel size, not latents size
         self.latents_crop_ltrb: Optional[Tuple[int, int]] = None
         self.cond_img_path: Optional[str] = None
-        self.image: Optional[Image.Image] = None  # optional, original PIL Image. None if not the latents is cached
+        self.image: Optional[numpy.ndarray] = None  # optional, original numpy Image. None if not the latents is cached
         self.text_encoder_outputs_cache_path: Optional[str] = None  # set in cache_text_encoder_outputs
 
         # new

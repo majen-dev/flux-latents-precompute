@@ -1,4 +1,5 @@
 import argparse
+import gc
 import json
 import os
 from concurrent.futures import ProcessPoolExecutor
@@ -65,32 +66,27 @@ def get_npz_filename(data_dir, image_key, is_full_path, recursive, resolution=No
         return os.path.join(data_dir, base_name) + ".safetensors"
 
 def pil_ensure_rgb(image: Image.Image) -> Image.Image:
-    # convert to RGB/RGBA if not already (deals with palette images etc.)
+    """
+    Ensure the image is in RGB mode, handling transparency if needed.
+    """
     if image.mode not in ["RGB", "RGBA"]:
         image = image.convert("RGBA") if "transparency" in image.info else image.convert("RGB")
-    # convert RGBA to RGB with white background
     if image.mode == "RGBA":
         canvas = Image.new("RGBA", image.size, (255, 255, 255))
         canvas.alpha_composite(image)
         image = canvas.convert("RGB")
     return image
 
-def convert_to_pil(data_entry):
+def load_and_convert_to_pil(image_path):
     """
-    Convert a tensor to a PIL image and return the processed data entry.
+    Load an image from disk, convert it to PIL, ensure RGB format, and return the image and path.
     """
-    if not data_entry:  # Handle empty batches
-        print("Empty batch received, skipping...")
-        return None
-    if data_entry[0] is None:
-        return None
-
-    img_tensor, image_path = data_entry[0]
     try:
-        image = pil_ensure_rgb(to_pil_image(img_tensor))
-        return (image, image_path)  # Return the converted image and its path
+        image = Image.open(image_path)
+        image = pil_ensure_rgb(image)
+        return (image, image_path)
     except Exception as e:
-        logger.error(f"Error converting tensor to PIL image for {image_path}: {e}")
+        logger.error(f"Error loading or converting image {image_path}: {e}")
         return None
 
 def main(args):
@@ -153,24 +149,13 @@ def main(args):
                 flux_strategy.cache_batch_latents(vae, bucket, args.flip_aug, args.alpha_mask, False)
                 bucket.clear()
 
-    # 読み込みの高速化のためにDataLoaderを使うオプション
-    dataset = train_util.ImageLoadingDataset(image_paths)
-    data = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=args.max_data_loader_n_workers,
-        collate_fn=collate_fn_remove_corrupted,
-        drop_last=False,
-    )
-
     # Parallel conversion using ProcessPoolExecutor
     with ProcessPoolExecutor() as executor:
-        converted_images = list(executor.map(convert_to_pil, data))
+        converted_images = list(executor.map(load_and_convert_to_pil, image_paths))
 
     bucket_counts = {}
 
-    for result in converted_images:
+    for i, result in enumerate(converted_images):
         if result is None:
             continue
 
@@ -206,8 +191,14 @@ def main(args):
         image_info.latents_cache_path = npz_file_name
         image_info.bucket_reso = reso
         image_info.resized_size = resized_size
-        image_info.image = image
+        image_info.image = np.array(image)
         bucket_manager.add_image(reso, image_info)
+
+        image.close()
+        del image
+        converted_images[i] = None
+        if i % 30 == 0:
+            gc.collect()
 
         # Decide whether to process the batch
         process_batch(False)

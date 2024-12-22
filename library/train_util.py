@@ -2416,17 +2416,17 @@ def process_image(tuple_args):
     Returns the processed image data and metadata.
     """
     info, use_alpha_mask, random_crop = tuple_args
+    # Limit PyTorch threads within this process
+    torch.set_num_threads(1)  # Adjust the number of threads as needed
+    torch.set_num_interop_threads(1)  # For inter-op threading
     print("start" + str(os.path.basename(info.absolute_path)))
     try:
-        IMAGE_TRANSFORMS_LOC = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize([0.5], [0.5]),
-            ]
-        )
         # Load image
         image = info.image
-        image = np.array(image)  # Convert Pillow image to NumPy array
+        #image = np.array(image)  # Convert Pillow image to NumPy array
+        #info.image.close()
+        #del info.image
+        #info.image = None
 
         # Resize and crop
         image, original_size, crop_ltrb = trim_and_resize_if_required(
@@ -2445,7 +2445,11 @@ def process_image(tuple_args):
         print("start2" + str(os.path.basename(info.absolute_path)))
         # Process the image (remove alpha channel, apply transforms)
         image = image[:, :, :3]  # Remove alpha channel if exists
-        image = IMAGE_TRANSFORMS_LOC(image)
+
+        image = torch.from_numpy(image)
+
+        normalize = transforms.Normalize([0.5], [0.5])
+        image = normalize(image)
 
         print("end" + str(os.path.basename(info.absolute_path)))
         return {
@@ -2482,6 +2486,10 @@ def load_images_and_masks_for_caching(
     with ProcessPoolExecutor() as executor:
         results = list(executor.map(process_image, zip(image_infos, [use_alpha_mask] * len(image_infos), [random_crop] * len(image_infos))))
 
+    for info in image_infos:
+        info.image.close()
+        del info.image
+        info.image = None
 
     # Unpack results
     for result in results:
