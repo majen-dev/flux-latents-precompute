@@ -3,7 +3,7 @@ import gc
 import json
 import os
 import traceback
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import List
 
@@ -148,7 +148,21 @@ def main(args):
 
     # Parallel conversion using ProcessPoolExecutor
     with ProcessPoolExecutor() as executor:
-        converted_images = list(executor.map(load_and_convert_to_pil, image_paths))
+        # Submit tasks
+        futures = {executor.submit(load_and_convert_to_pil, path): path for path in image_paths}
+
+        # Gather results
+        converted_images = []
+        for future in as_completed(futures):
+            image_path = futures[future]
+            try:
+                result = future.result()
+                if result is not None:
+                    converted_images.append(result)  # Only append successful results
+            except Exception as e:
+                # Handle exceptions in the main thread
+                print(f"Error processing {image_path}: {e}")
+                traceback.print_exc()
 
     bucket_counts = {}
 
