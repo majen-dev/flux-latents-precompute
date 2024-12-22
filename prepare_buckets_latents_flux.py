@@ -2,6 +2,7 @@ import argparse
 import gc
 import json
 import os
+import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import List
@@ -81,7 +82,8 @@ def load_and_convert_to_pil(image_path):
 
         return (image, image_path)
     except Exception as e:
-        logger.error(f"Error loading or converting image {image_path}: {e}")
+        print(f"Error loading or converting image {image_path}: {str(e)}")
+        traceback.print_exc()
         return None
 
 def main(args):
