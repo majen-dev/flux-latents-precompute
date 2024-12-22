@@ -2442,18 +2442,17 @@ def trim_and_resize_if_required(
 
         # Resize the image if needed
         if image_width != resized_size[0] or image_height != resized_size[1]:
-            image = resize(image, size=list(resized_size), interpolation=InterpolationMode.BICUBIC, antialias=True)  # Use torchvision's resize with antialiasing
+            image = resize(image, size=[resized_size[1], resized_size[0]], interpolation=InterpolationMode.BICUBIC, antialias=True)  # Use torchvision's resize with antialiasing
 
         channels, image_height, image_width = image.shape
 
-        # Trim the image to the target resolution (width x height)
-        # Trim the width to target resolution
+        # Trim the width to match the target resolution
         if image_width > reso[0]:
             trim_size = image_width - reso[0]
             p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
             image = image[:, :, p: p + reso[0]]
 
-        # Trim the height to target resolution
+        # Trim the height to match the target resolution
         if image_height > reso[1]:
             trim_size = image_height - reso[1]
             p = trim_size // 2 if not random_crop else random.randint(0, trim_size)
@@ -2485,6 +2484,7 @@ def process_image(tuple_args):
         image = info.image
         image = torch.from_numpy(image).to("cuda", non_blocking=True).to(torch.float32) / 255.0
         assert image.ndim == 3 and image.shape[2] == 3, f"Unexpected image shape: {image.shape}"
+        print(image.shape)
         image = image.permute(2, 0, 1)
         #image = image.to("cuda", non_blocking=True).to(torch.float32)
         #image = np.array(image)  # Convert Pillow image to NumPy array
