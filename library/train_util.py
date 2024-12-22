@@ -2482,11 +2482,7 @@ def process_image(tuple_args):
     try:
         # Load image
         image = info.image
-        image = torch.from_numpy(image).to("cuda", non_blocking=True).to(torch.float32) / 255.0
-        info.image = None
-        assert image.ndim == 3 and image.shape[2] == 3, f"Unexpected image shape: {image.shape}"
 
-        image = image.permute(2, 0, 1)
         #image = image.to("cuda", non_blocking=True).to(torch.float32)
         #image = np.array(image)  # Convert Pillow image to NumPy array
         #info.image.close()

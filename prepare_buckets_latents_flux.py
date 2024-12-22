@@ -201,10 +201,12 @@ def main(args):
         image_info.bucket_reso = reso
         image_info.resized_size = resized_size
         try:
-            image_info.image = np.array(image)
+            image_info.image = torch.from_numpy(np.array(image)).to("cuda", non_blocking=True).to(torch.bfloat16) / 255.0
+            image_info.image = image_info.image.permute(2, 0, 1)
         except Exception as e:
             logger.error(f"Error converting image to np {image_path}: {e}")
             continue
+        assert image_info.image.ndim == 3 and image_info.image.shape[2] == 3, f"Unexpected image shape: {image_info.image.shape}"
         bucket_manager.add_image(reso, image_info)
 
         image.close()
@@ -280,7 +282,7 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mixed_precision",
         type=str,
-        default="no",
+        default="bf16",
         choices=["no", "fp16", "bf16"],
         help="use mixed precision / 混合精度を使う場合、その精度",
     )
