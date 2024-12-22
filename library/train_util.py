@@ -2477,8 +2477,6 @@ def process_image(tuple_args):
     Returns the processed image data and metadata.
     """
     info, use_alpha_mask, random_crop = tuple_args
-    # Limit PyTorch threads within this process
-    torch.set_num_threads(1)  # Adjust the number of threads as needed
 
     try:
         # Load image
@@ -2543,7 +2541,7 @@ def load_images_and_masks_for_caching(
     crop_ltrbs: List[Tuple[int, int, int, int]] = []
 
     # Use multiprocessing to process all images
-    with ProcessPoolExecutor() as executor:
+    with ThreadPoolExecutor() as executor:
         results = list(executor.map(process_image, zip(image_infos, [use_alpha_mask] * len(image_infos), [random_crop] * len(image_infos))))
 
     for info in image_infos:
