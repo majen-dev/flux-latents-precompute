@@ -2479,7 +2479,6 @@ def process_image(tuple_args):
     info, use_alpha_mask, random_crop = tuple_args
     # Limit PyTorch threads within this process
     torch.set_num_threads(1)  # Adjust the number of threads as needed
-    torch.set_num_interop_threads(1)  # For inter-op threading
 
     try:
         # Load image
