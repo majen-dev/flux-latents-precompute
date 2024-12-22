@@ -83,7 +83,6 @@ def load_and_convert_to_pil(image_path):
         return (image, image_path)
     except Exception as e:
         print(f"Error loading or converting image {image_path}: {str(e)}")
-        traceback.print_exc()
         return None
 
 def main(args):
@@ -162,7 +161,6 @@ def main(args):
             except Exception as e:
                 # Handle exceptions in the main thread
                 print(f"Error processing {image_path}: {e}")
-                traceback.print_exc()
 
     bucket_counts = {}
 

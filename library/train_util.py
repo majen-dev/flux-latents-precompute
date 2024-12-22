@@ -3,6 +3,7 @@
 import argparse
 import ast
 import asyncio
+import gc
 from concurrent.futures import Future, ThreadPoolExecutor, ProcessPoolExecutor
 import datetime
 import importlib
@@ -2487,9 +2488,8 @@ def load_images_and_masks_for_caching(
         results = list(executor.map(process_image, zip(image_infos, [use_alpha_mask] * len(image_infos), [random_crop] * len(image_infos))))
 
     for info in image_infos:
-        info.image.close()
-        del info.image
         info.image = None
+    gc.collect()
 
     # Unpack results
     for result in results:
