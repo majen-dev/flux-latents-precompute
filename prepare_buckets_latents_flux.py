@@ -86,6 +86,7 @@ def load_and_convert_to_pil(image_path):
         return None
 
 def main(args):
+    train_util.enable_high_vram(None)
     flux_strategy = FluxLatentsCachingStrategy(
         cache_to_disk=True, batch_size=args.batch_size, skip_disk_cache_validity_check=True
     )

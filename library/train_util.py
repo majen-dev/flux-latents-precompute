@@ -3680,11 +3680,10 @@ def verify_command_line_training_args(args: argparse.Namespace):
         )
 
 
-def enable_high_vram(args: argparse.Namespace):
-    if args.highvram:
-        logger.info("highvram is enabled / highvramが有効です")
-        global HIGH_VRAM
-        HIGH_VRAM = True
+def enable_high_vram(args: argparse.Namespace|None):
+    logger.info("highvram is enabled / highvramが有効です")
+    global HIGH_VRAM
+    HIGH_VRAM = True
 
 
 def verify_training_args(args: argparse.Namespace):
