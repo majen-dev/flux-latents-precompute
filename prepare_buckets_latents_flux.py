@@ -206,7 +206,7 @@ def main(args):
         except Exception as e:
             logger.error(f"Error converting image to np {image_path}: {e}")
             continue
-        assert image_info.image.ndim == 3 and image_info.image.shape[2] == 3, f"Unexpected image shape: {image_info.image.shape}"
+        assert image_info.image.ndim == 3 and image_info.image.shape[0] == 3, f"Unexpected image shape: {image_info.image.shape}"
         bucket_manager.add_image(reso, image_info)
 
         image.close()
