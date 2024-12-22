@@ -2498,6 +2498,7 @@ def process_image(tuple_args):
 
         normalize = transforms.Normalize([0.5], [0.5])
         image = normalize(image)
+        info.image = None
 
         return {
             "image": image,
@@ -2530,7 +2531,7 @@ def load_images_and_masks_for_caching(
     crop_ltrbs: List[Tuple[int, int, int, int]] = []
 
     # Use multiprocessing to process all images
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(process_image, zip(image_infos, [use_alpha_mask] * len(image_infos), [random_crop] * len(image_infos))))
 
     # Unpack results

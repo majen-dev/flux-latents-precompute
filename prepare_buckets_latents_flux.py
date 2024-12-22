@@ -215,6 +215,8 @@ def main(args):
         converted_images[i] = None
         if i % 30 == 0:
             gc.collect()
+        if i % 60 == 0:
+            torch.cuda.empty_cache()
 
         # Decide whether to process the batch
         process_batch(False)
