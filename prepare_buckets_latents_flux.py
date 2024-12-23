@@ -313,9 +313,7 @@ def setup_parser() -> argparse.ArgumentParser:
 
     return parser
 
+parser = setup_parser()
 
-if __name__ == "__main__":
-    parser = setup_parser()
-
-    args = parser.parse_args()
-    main(args)
+args = parser.parse_args()
+main(args)
